@@ -73,7 +73,7 @@ class HLSTMModel:
         self.compiler = td.Compiler.create(self.model)
         print('input type: %s' % self.model.input_type)
         print('output type: %s' % self.model.output_type)
-
+        
     def prepare_training(self,
                          LEARNING_RATE=0.05,
                          KEEP_PROB=0.75,
