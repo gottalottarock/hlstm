@@ -1,10 +1,12 @@
 import copy
 import random
-
+from logger import Logger
 
 class HLSTMInterface:
 
-    def __init__(self, model, logger=Logger()):
+    def __init__(self, model, logger=None):
+        if not logger:
+            logger = Logger()
         self.model = model
         self.logger = logger
 

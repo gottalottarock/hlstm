@@ -6,12 +6,11 @@ import os
 
 class HLSTMModel:
 
-    def __init__(self, sess, treeBinarizer, binaryTreeLSTM,
+    def __init__(self, sess, tree_lstm,
                  sent_lstm_num_units, num_classes):
         self.sess = sess
-        self.binaryTreeLSTM = binaryTreeLSTM
+        self.tree_lstm = tree_lstm
         self.sent_lstm_num_units = sent_lstm_num_units
-        self.treeBinarizer = treeBinarizer
         self.save_dir = ''
         self.compile_model(num_classes)
 
@@ -20,8 +19,7 @@ class HLSTMModel:
             num_units=self.sent_lstm_num_units), 'sent_cell')
 
     def sent_lstm(self):
-        return (td.Map(td.InputTransform(self.tree_transform)
-                       >> self.binaryTreeLSTM.embed_tree()
+        return (td.Map(self.tree_lstm.tree_lstm()
                        >> td.Concat()) >> td.RNN(self.sent_cell()))
 
     def output_layer(self, num_classes):
@@ -32,12 +30,6 @@ class HLSTMModel:
                 >> td.GetItem(0) >> self.output_layer(num_classes)) \
             >> self.set_metrics()
 
-    def tree_transform(self, p):
-        try:
-            b_tree = self.treeBinarizer.to_binary_tree(p)
-        except RecursionError:
-            b_tree = '(()())'
-        return b_tree
 
     def tf_node_loss(self, logits, labels):
         return tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -69,7 +61,7 @@ class HLSTMModel:
     def compile_model(self, num_classes):
         self.num_classes = num_classes
         self.model = self.linearLSTM_over_TreeLstm(num_classes)
-        self.binaryTreeLSTM.resolve_subtree()  # to finish recursive declaration
+        self.tree_lstm.resolve_subtree()  # to finish recursive declaration
         self.compiler = td.Compiler.create(self.model)
         print('input type: %s' % self.model.input_type)
         print('output type: %s' % self.model.output_type)
@@ -86,7 +78,7 @@ class HLSTMModel:
         self.EMBEDDING_LEARNING_RATE_FACTOR = EMBEDDING_LEARNING_RATE_FACTOR
         self.BATCH_SIZE = BATCH_SIZE
         self.train_feed_dict = {
-            self.binaryTreeLSTM.tree_lstm_keep_prob_ph: self.KEEP_PROB}
+            self.tree_lstm.tree_lstm_keep_prob_ph: self.KEEP_PROB}
         self.metrics = {k: tf.reduce_mean(
             v) for k, v in self.compiler.metric_tensors.items()}
         self.loss = tf.reduce_sum(self.compiler.metric_tensors['root_loss'])
@@ -100,7 +92,7 @@ class HLSTMModel:
         grads_and_vars = self.opt.compute_gradients(self.loss)
         found = 0
         for i, (grad, var) in enumerate(grads_and_vars):
-            if var == self.binaryTreeLSTM.word_embedding.weights:
+            if var == self.tree_lstm.word_embedding.weights:
                 found += 1
                 grad = tf.scalar_mul(self.EMBEDDING_LEARNING_RATE_FACTOR, grad)
                 grads_and_vars[i] = (grad, var)
@@ -186,10 +178,10 @@ class HLSTMModel:
     def model_properties(self):
         property = {
             'NUM_CLASSES': self.num_classes,
-            'TREE_LSTM_NUM_UNITS': self.binaryTreeLSTM.tree_lstm_num_units,
+            'TREE_LSTM_NUM_UNITS': self.tree_lstm.tree_lstm_num_units,
             'SENT_LSTM_NUM_UNITS': self.sent_lstm_num_units,
-            'VOCABULARY_LEN': len(self.binaryTreeLSTM.vocab),
-            'WEIGHTS_SHAPE': self.binaryTreeLSTM.weights.shape
+            'VOCABULARY_LEN': len(self.tree_lstm.vocab),
+            'WEIGHTS_SHAPE': self.tree_lstm.weights.shape
         }
         return property
 

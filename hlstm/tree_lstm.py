@@ -1,17 +1,19 @@
 import tensorflow as tf
 import tensorflow_fold as td
 from .tree_lstm_cell import BinaryTreeLSTMCell
-
+from .tree_binarizer import TreeBinarizer
 
 class BinaryTreeLSTM:
 
-    def __init__(self, weights, vocab, tree_lstm_num_units):
+    def __init__(self, weights, vocab, tree_lstm_num_units, tree_binarizer = None):
+        if not tree_binarizer:
+            tree_binarizer = TreeBinarizer()
         self.tree_lstm_keep_prob_ph = tf.placeholder_with_default(1.0, [])
         self.tree_lstm_num_units = tree_lstm_num_units
         self.tree_lstm = td.ScopedLayer(
             tf.contrib.rnn.DropoutWrapper(
                 BinaryTreeLSTMCell(tree_lstm_num_units,
-                                   self.tree_lstm_keep_prob_ph),
+                                   self.tdree_lstm_keep_prob_ph),
                 self.tree_lstm_keep_prob_ph, self.tree_lstm_keep_prob_ph),
             name_or_scope='tree_lstm')
         self.word_embedding = td.Embedding(
@@ -49,6 +51,13 @@ class BinaryTreeLSTM:
 
         return tree2vec >> self.tree_lstm
 
+    def tree_transform(self, p):
+        try:
+            b_tree = self.tree_binarizer.to_binary_tree(p)
+        except RecursionError:
+            b_tree = '(()())'
+        return b_tree
+
     def tokenize(self, s):
         if not s[1:-1].strip():
             return ['']
@@ -57,6 +66,9 @@ class BinaryTreeLSTM:
     def embed_tree(self):
         return td.InputTransform(self.tokenize) >> self.logits_and_state() \
             >> td.GetItem(1)
+
+    def tree_lstm():
+        return td.InputTransform(self.tree_transform) >> self.embed_tree()
 
     def resolve_subtree(self):
         self.embed_subtree.resolve_to(self.embed_tree())
