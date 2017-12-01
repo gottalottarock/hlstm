@@ -3,6 +3,8 @@ import tensorflow_fold as td
 import time
 import tempfile
 import os
+import datetime
+
 
 class HLSTMModel:
 
@@ -29,7 +31,6 @@ class HLSTMModel:
         return (td.Scalar('int32'), self.sent_lstm() >> td.GetItem(1)
                 >> td.GetItem(0) >> self.output_layer(num_classes)) \
             >> self.set_metrics()
-
 
     def tf_node_loss(self, logits, labels):
         return tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -65,7 +66,7 @@ class HLSTMModel:
         self.compiler = td.Compiler.create(self.model)
         print('input type: %s' % self.model.input_type)
         print('output type: %s' % self.model.output_type)
-        
+
     def prepare_training(self,
                          LEARNING_RATE=0.05,
                          KEEP_PROB=0.75,
@@ -105,9 +106,11 @@ class HLSTMModel:
             [self.train_grad, self.loss], self.train_feed_dict)
         return batch_loss
 
-    def train_epoch(self, train_input=self.train_inputs):
+    def train_epoch(self, train_input=None):
         if not self.is_compiled:
             return 0, 0
+        if not train_input:
+            train_input = self.train_inputs
         t = time.time()
         loss = sum(self.train_step(ba)
                    for ba in td.group_by_batches(train_input, self.BATCH_SIZE))
@@ -139,7 +142,7 @@ class HLSTMModel:
             self.init_dev_set(dev_set, dev_batch_size=dev_batch_size)
         all_res = {'EPOCH': [], 'SAVE': [], 'TRAIN_LOSS': [],
                    'TIME_TRAIN_EPOCH_S': [], 'DEV_METRICS': [], 'DEV_EVAL_TIME_S': []}
-        for epoch, shuffled in enumerate(td.epochs(self.train_inputs, self.EPOCHS), 1):
+        for epoch, shuffled in enumerate(td.epochs(self.train_inputs, epochs), 1):
             print('Start epoch ', epoch)
             epoch_res = {key: None for key in all_res.keys()}
             epoch_res['EPOCH'] = epoch
@@ -148,15 +151,19 @@ class HLSTMModel:
             print('Training took ', epoch_res['TIME_TRAIN_EPOCH_S'], 's.')
             checkpoint_path = None
             if save:
-                checkpoint_path = self.save_model(dir=save_dir)
+                checkpoint_path = self.save_model(save_dir=save_dir)
 
             if dev_set:
                 dev_output, epoch_res['DEV_METRICS'], epoch_res[
                     'DEV_EVAL_TIME_S'] = self.eval_feed_dict()
                 print('Evaluation took ', epoch_res['DEV_EVAL_TIME_S'], 's.')
 
-            for key in all_res.keys():
+            for key in all_res:
                 all_res[key].append(epoch_res[key])
+            dev_accuracy = ['%s: %.2f' % (k, v) for k, v in sorted(
+                epoch_res['DEV_METRICS'].items())]
+            print('epoch:%4d, train_loss: %.3e, dev_accuracy:  %s\n' %
+                  (epoch_res['EPOCH'], epoch_res['TRAIN_LOSS'], ' '.join(dev_accuracy)))
             yield epoch_res, all_res
 
     def eval(self, dev_set, dev_batch_size=1):
@@ -187,6 +194,7 @@ class HLSTMModel:
 
     @property
     def train_properties(self):
+        property = dict()
         try:
             property = {
                 'LEARNING_RATE': self.LEARNING_RATE,
@@ -196,8 +204,7 @@ class HLSTMModel:
             }
         except AttributeError:
             print("Training properties not prepared, return empty dict")
-            property = dict()
-    return property
+        return property
 
     def save_model(self, save_dir='', file_name='', global_step=1):
         try:
@@ -220,10 +227,10 @@ class HLSTMModel:
         try:
             if not isinstance(self.compiler, td.blocks.block_compiler.Compiler):
                 print("First you should to compile model.")
-                break
+                return
         except AttributeError:
             print("First you should to compile model.")
-            break
+            return
 
         try:
             self.saver.restore(self.sess, path_to_model)

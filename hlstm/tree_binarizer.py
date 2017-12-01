@@ -1,9 +1,8 @@
 import random
 import re
 from string import punctuation
-
 from nltk.tokenize.sexpr import sexpr_tokenize
-import settings.STOP_WORDS
+from .settings import STOP_WORDS
 
 
 class TreeBinarizer():
@@ -11,7 +10,7 @@ class TreeBinarizer():
     def __init__(self, myvocab, replace_dict):
         self.vocab = myvocab
         self.replace_dict = replace_dict
-        self.STOP_WORDS = settings.STOP_WORDS
+        self.STOP_WORDS = STOP_WORDS
 
     def split_to_two_lists(self, lis):
         random.shuffle(lis)
@@ -36,7 +35,7 @@ class TreeBinarizer():
         # replace with value if pattern(key) in word, if there are some several
         # patterns, replace with random
         for key, value in self.replace_dict:
-            if re.seach(key, s):
+            if re.search(key, s):
                 s = value
         return s
 

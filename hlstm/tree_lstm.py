@@ -1,21 +1,24 @@
 import tensorflow as tf
 import tensorflow_fold as td
+from nltk.tokenize.sexpr import sexpr_tokenize
 from .tree_lstm_cell import BinaryTreeLSTMCell
 from .tree_binarizer import TreeBinarizer
 
+
 class BinaryTreeLSTM:
 
-    def __init__(self, weights, vocab, tree_lstm_num_units, tree_binarizer = None):
+    def __init__(self, weights, vocab, tree_lstm_num_units, tree_binarizer=None):
         if not tree_binarizer:
-            tree_binarizer = TreeBinarizer()
+            self.tree_binarizer = TreeBinarizer()
+        self.tree_binarizer = tree_binarizer
         self.tree_lstm_keep_prob_ph = tf.placeholder_with_default(1.0, [])
         self.tree_lstm_num_units = tree_lstm_num_units
-        self.tree_lstm = td.ScopedLayer(
+        self.tree_lstm_cell = td.ScopedLayer(
             tf.contrib.rnn.DropoutWrapper(
-                BinaryTreeLSTMCell(tree_lstm_num_units,
-                                   self.tdree_lstm_keep_prob_ph),
+                BinaryTreeLSTMCell(self.tree_lstm_num_units,
+                                   self.tree_lstm_keep_prob_ph),
                 self.tree_lstm_keep_prob_ph, self.tree_lstm_keep_prob_ph),
-            name_or_scope='tree_lstm')
+            name_or_scope='tree_lstm_cell')
         self.word_embedding = td.Embedding(
             *weights.shape, initializer=weights, name='word_embedding')
         self.embed_subtree = td.ForwardDeclaration(name='embed_subtree')
@@ -38,7 +41,7 @@ class BinaryTreeLSTM:
 
         # Trees are binary, so the tree layer takes two states as its
         # input_state.
-        zero_state = td.Zeros((self.tree_lstm.state_size,) * 2)
+        zero_state = td.Zeros((self.tree_lstm_cell.state_size,) * 2)
         # Input is a word vector.
         zero_inp = td.Zeros(self.word_embedding.output_type.shape[0])
 
@@ -49,7 +52,7 @@ class BinaryTreeLSTM:
         # OneOf returns one of blocks
         tree2vec = td.OneOf(len, [(1, word_case), (2, pair_case)])
 
-        return tree2vec >> self.tree_lstm
+        return tree2vec >> self.tree_lstm_cell
 
     def tree_transform(self, p):
         try:
@@ -67,7 +70,7 @@ class BinaryTreeLSTM:
         return td.InputTransform(self.tokenize) >> self.logits_and_state() \
             >> td.GetItem(1)
 
-    def tree_lstm():
+    def tree_lstm(self):
         return td.InputTransform(self.tree_transform) >> self.embed_tree()
 
     def resolve_subtree(self):
