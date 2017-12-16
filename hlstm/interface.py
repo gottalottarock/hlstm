@@ -14,17 +14,12 @@ class HLSTMInterface:
         self.model = model
         self.logger = logger
 
-    def get_set_info(self, set):
-        d = {'LABELS_DISTRIBUTION': self.get_set_labels_distribution(set),
-             'SET_LEN': len(set)}
-        return d
-
     # def train input:
     #   train_set and test_set: [label, [tree, tree, tree, tree]]
 
-    def train(self, train_set, test_set=None, epochs=10, dev_batch_size=1, save=True,
-              save_model_dir='', sess_name='', func_set_info_dict=None,
-              **propery_dict):
+    def train(self, train_set, test_set=None, epochs=10, dev_batch_size=1,
+              save=True, save_model_dir='', sess_name='', func_set_info_dict=None,
+              **property_dict):
         if not self.model.is_compiled:
             return -1
         if not func_set_info_dict:
@@ -32,17 +27,21 @@ class HLSTMInterface:
         if not sess_name:
             sess_name = 'train_' + datetime.datetime.now().strftime('%m_%d_%H_%M')
         self.logger.start_session(sess_name)
-        self.model.prepare_training(propery_dict)
-        train_epochs = self.model.train_epochs(train_set, test_set,
-                                               dev_batch_size, epochs, dev_batch_size, save, save_model_dir)
+        self.model.prepare_training(**property_dict)
+        train_epochs = self.model.train_epochs(train_set=train_set, dev_set=test_set,
+                                               dev_batch_size=dev_batch_size,
+                                               epochs=epochs, save=save,
+                                               save_dir=save_model_dir)
         for epoch_res, all_res in train_epochs:
             pass
         self.logger.record_train_logs(model_properies=self.model.model_properties,
-                                      train_properties=self.model.train_properties, train_results=all_res,
-                                      train_set_info=func_set_info_dict(train_set),
+                                      train_properties=self.model.train_properties,
+                                      train_results=all_res,
+                                      train_set_info=func_set_info_dict(
+                                          train_set),
                                       dev_set_info=func_set_info_dict(test_set))
         self.logger.stop_session()
-        logs_df = self.logger.get_logs_dataframe()
+        logs_df = self.logger.get_all_logs_dataframe()
         return logs_df[logs_df['SESS_NAME'] == sess_name]
     # def eval input:
     # dev_set = [tree, tree, tree]
@@ -75,7 +74,8 @@ class HLSTMInterface:
                 yield l[0:k-s]+l[k:], l[k-s:k]
 
         random.shuffle(set)
-        sess_name = '%d-folds_CV_'+datetime.datetime.now().strftime('%m_%d_%H_%M')
+        sess_name = ('%d-folds_CV_' % folds) +  \
+                    datetime.datetime.now().strftime('%m_%d_%H_%M')
         for train_s, dev_s in train_dev_chunks(set, folds):
             self.train(train_set=train_s, dev_set=dev_s, epochs=epochs,
                        dev_batch_size=dev_batch_size,
@@ -94,8 +94,22 @@ class HLSTMInterface:
         self.logger.save_logs(path, append)
 
     # set = [[label1, [first sent tree, second sent tree, ...],
+    #        [label2, [first sent tree, second sent tree, ...], ...]]]
     def get_set_labels_distribution(self, set):
-                                                #       [label2, [first sent tree, second sent tree, ...], ...]]]
-
         # {label1: count1, label2 : count 2, ..}
-        return dict(zip(*np.unique(list(map(itemgetter(0), set)), return_counts=True)))
+        return dict(zip(*np.unique(list(map(itemgetter(0), set)),return_counts=True)))
+
+    def get_set_info(self, set):
+        d = {'LABELS_DISTRIBUTION': self.get_set_labels_distribution(set),
+             'SET_LEN': len(set)}
+        return d
+
+    def restore_model(self,path, saved_model_properties = None):
+        # if model_properties:
+        #     compiled_model_properties = self.model.model_properties
+        #     sharedKeys = set(compiled_model_properties.keys()).intersection(
+        #                     saved_model_properties.keys())
+        #     for key in sharedKeys:
+        #         if compiled_model_properties[key] != saved_model_properties[key]:
+        #             print('Restored model')
+        self.model.restore_model(path)

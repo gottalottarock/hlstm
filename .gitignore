@@ -1,5 +1,7 @@
 sublime/
 .ipynb_checkpoints/
+data/test_data/
+
 
 */__pycache__/
 __pycache__/

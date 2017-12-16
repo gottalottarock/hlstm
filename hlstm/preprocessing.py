@@ -1,12 +1,12 @@
 import numpy as np
+import pandas as pd
 import random
 import pickle
 from collections import Counter
 from gensim.models import KeyedVectors
 from .settings import DATA_DIR
 
-
-def load_word2vec(path, limit):
+def load_keyed_vectors(path, limit):
     wv = KeyedVectors.load_word2vec_format(path, binary=True, limit=limit)
     wv.init_sims(replace=True)
     return wv
@@ -22,10 +22,10 @@ def prepare_weights(wv, corpus_vocab):
 
 
 # corpus_vocab:  DATA_DIR+'/vocab'
-def prepare_embedding(googlew2vpath, corpus_vocab_path=DATA_DIR+'vocab', limit=1000000):
+def prepare_embedding(googlew2vpath,limit=1000000, corpus_vocab_path=DATA_DIR+'/vocab'):
     with open(corpus_vocab_path, 'rb') as fp:
         corpus_vocab = pickle.load(fp)
-    wv = load_word2vec(googlew2vpath, limit=1000000)
+    wv = load_keyed_vectors(googlew2vpath, limit)
     return prepare_weights(wv, corpus_vocab)
 
 # Code labels by it's index in list labels.
@@ -36,7 +36,8 @@ def prepare_embedding(googlew2vpath, corpus_vocab_path=DATA_DIR+'vocab', limit=1
 #   ]
 
 
-def prepare_labels(df, labels_column='topics', trees_column='trees', trees_separator='||'):
+def prepare_labels(path_to_texts_df, labels_column='topics', trees_column='trees', trees_separator='||'):
+    df = pd.DataFrame.from_csv(path_to_texts_df)
     labels = list(df['topics'].unique())
     train_texts = [[labels.index(row[labels_column]),
                     [tree.strip() for tree in row[trees_column].split(trees_separator)]]

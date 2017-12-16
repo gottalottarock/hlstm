@@ -1,0 +1,32 @@
+Model:
+    General:
+     ✔ add scope property @done (17-12-13 21:16)
+    Logging:
+     ✔ change properties logic(from tensorflow variables, not from object fields) @done (17-12-13 21:16)
+     Notes
+     tree_lstm_cell/fully_connected/weights shape
+       (embedding lenth + tree_lstm_num_units * 2, tree_lstm_num_units*5) 
+     sent_cell/weights shape
+       (tree_lstm_num_units * 2 + sent_lstm_num_units, sent_lstm_num_units*4)
+     ☐ add logs processing methods
+    Save:
+     ✔ save only model variables @done (17-12-13 21:16)
+    Restore:
+     ☐ change restore logic
+     ☐ restore without hand-init(cold start restore)
+     ☐ get saved model properties
+     ☐ understand graphs
+     ✔ understand scopes and variable names ending @done (17-12-13 21:18)
+    Evaluate:
+     ☐ check evaluate
+Demo:
+   ☐ add HOW TO RESTORE to demo
+   ☐ add preprocessing texts demo
+   ☐ add HOW TO EVALUATE demo
+
+Design:
+  ☐ add ReadMe
+  ☐ add pictures or graphs of model topology
+  ☐ add results on data
+Data:
+  ☐ check model on other data

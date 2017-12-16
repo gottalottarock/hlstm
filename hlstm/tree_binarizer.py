@@ -7,7 +7,7 @@ from .settings import STOP_WORDS
 
 class TreeBinarizer():
 
-    def __init__(self, myvocab, replace_dict):
+    def __init__(self, myvocab, replace_dict = None):
         self.vocab = myvocab
         self.replace_dict = replace_dict
         self.STOP_WORDS = STOP_WORDS
@@ -34,6 +34,8 @@ class TreeBinarizer():
     def replace(self, s):
         # replace with value if pattern(key) in word, if there are some several
         # patterns, replace with random
+        if not self.replace_dict:
+            return s
         for key, value in self.replace_dict:
             if re.search(key, s):
                 s = value

@@ -13,26 +13,27 @@ class Logger():
         if self.sess != -1:
             past_sess = self.sess
             self.stop_session()
-            print("session number: %i with name: %s stoped" %
-                  self.sess, self.sess_name) #last sess_name
         self.sess = len(self.logs)
         if not sess_name:
             sess_name = str(self.sess)
         self.sess_name = sess_name
         self.current_logs = list()
+        print("session number: %i with name: %s started" %
+              (self.sess, self.sess_name))
 
     def stop_session(self):
         if self.current_logs:
             self.logs += self.current_logs
             print("session number: %i with name: %s stoped and recorded" %
-                  self.sess, self.sess_name)
+                  (self.sess, self.sess_name))
         else:
             print("EMPTY session %i with name: %s stoped and NOT recorded"
-                  % self.sess, self.sess_name)
+                  % (self.sess, self.sess_name))
         self.current_logs = list()
         self.sess = -1
 
-    def record_train_logs(self, model_properies, train_properties, train_results, train_set_info=None, dev_set_info=None):
+    def record_train_logs(self, model_properies, train_properties,
+                          train_results, train_set_info=None, dev_set_info=None):
         if self.sess != -1:
             if not train_set_info:
                 train_set_info = dict()
@@ -41,8 +42,10 @@ class Logger():
             logs_dict = copy.deepcopy(model_properies)
             logs_dict.update(copy.deepcopy(train_properties))
             logs_dict.update(copy.deepcopy(train_results))
-            logs_dict.update({('TRAIN_'+ key): value for key, value in copy.deepcopy(train_set_info).items()})
-            logs_dict.update({('DEV_' + key): value for key, value in copy.deepcopy(dev_set_info).items()})
+            logs_dict.update({('TRAIN_' + key): value for key,
+                              value in copy.deepcopy(train_set_info).items()})
+            logs_dict.update({('DEV_' + key): value for key,
+                              value in copy.deepcopy(dev_set_info).items()})
             logs_dict["SESS_NAME"] = self.sess_name
             logs_dict["SESS_NUM"] = self.sess  # like hash
             self.current_logs.append(logs_dict)
