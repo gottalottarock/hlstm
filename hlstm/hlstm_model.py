@@ -22,7 +22,7 @@ class HLSTMModel:
         self.output_layer = td.FC(
             num_classes, activation=None, name='output_layer')
         return (td.Scalar('int32'), sent_lstm >> td.GetItem(1)
-                >> td.GetItem(0) >> self.output_layer(num_classes)) \
+                >> td.GetItem(0) >> self.output_layer) \
             >> self.set_metrics()
 
     def tf_node_loss(self, logits, labels):
@@ -54,7 +54,6 @@ class HLSTMModel:
         return c
 
     def compile_model(self, num_classes, sent_lstm_num_units):
-        self.num_classes = num_classes
         self.model = self.linearLSTM_over_TreeLstm(
             num_classes, sent_lstm_num_units)
         self.tree_lstm.resolve_subtree()  # to finish recursive declaration
@@ -82,7 +81,7 @@ class HLSTMModel:
         self.opt = tf.train.AdamOptimizer(self.LEARNING_RATE)
         self.train = self.prepare_word_embedding_gradients()
         if init == True:
-            self.sess.run(tf.global_variables_initializer())
+            self.init_model_variables()
 
     def prepare_word_embedding_gradients(self):
         grads_and_vars = self.opt.compute_gradients(self.loss)
@@ -131,7 +130,8 @@ class HLSTMModel:
         return dev_set
 
     def train_epochs(self, train_set, dev_set=None, epochs=10,
-                     dev_batch_size=1, save=True, save_dir=''):
+                     dev_batch_size=1, save=True, save_dir='',
+                     quiet_saver = True):
         self.init_train_set(train_set)
         if dev_set:
             self.init_dev_set(dev_set, dev_batch_size=dev_batch_size)
@@ -152,12 +152,11 @@ class HLSTMModel:
                     'DEV_EVAL_TIME_S'] = self.eval_feed_dict()
                 print('Evaluation took %.2f s.' % epoch_res['DEV_EVAL_TIME_S'])
 
-
             dev_accuracy = ['%s: %.2f' % (k, v) for k, v in sorted(
                 epoch_res['DEV_METRICS'].items())]
             if save:
                 checkpoint_path = self.save_model(
-                    save_dir=save_dir, global_step=epoch)
+                    save_dir=save_dir, global_step=epoch, quiet = quiet_saver)
                 epoch_res['SAVE'] = checkpoint_path
             else:
                 epoch_res['SAVE'] = ''
@@ -184,12 +183,12 @@ class HLSTMModel:
         return True
 
     def save_model(self, save_dir='', file_name='', global_step=1,
-                   save_embedding = True, save_tree_lstm_cell = True,
-                   save_sent_lstm = True, save_output_layer = True, quiet = False):
-        var_dict = self.prepare_saver(embedding = save_embedding,
-            tree_lstm_cell = save_tree_lstm_cell, sent_lstm = save_sent_lstm,
-            output_layer = save_output_layer)
-        saver = tf.train.Saver(var_list = var_dict, max_to_keep = None)
+                   save_embedding=True, save_tree_lstm_cell=True,
+                   save_sent_lstm=True, save_output_layer=True,
+                   save_optimizer_weights=False, quiet=False):
+        var_dict, saver = self.prepare_saver(embedding=save_embedding,
+                                             tree_lstm_cell=save_tree_lstm_cell, sent_lstm=save_sent_lstm,
+                                             output_layer=save_output_layer, optimizer=save_optimizer_weights)
         if save_dir:
             self.save_dir = save_dir
         elif not self.save_dir:
@@ -202,40 +201,56 @@ class HLSTMModel:
         print('Model saved to %s' % checkpoint_path)
         if not quiet:
             print("Saved variables:")
-            print('\n'.join(save_dir.keys()))
+            print('\n'.join(sorted(var_dict.keys())))
         return checkpoint_path
 
-    def restore_model(self, path_to_model, restore_embedding = True, restore_tree_lstm_cell = True,
-                   restore_sent_lstm = True, restore_output_layer = True):
+    def restore_model(self, path_to_model, restore_embedding=True,
+                      restore_tree_lstm_cell=True, restore_sent_lstm=True,
+                      restore_output_layer=True, restore_optimizer = False):
         if self.is_compiled:
             pass
-        var_dict = self.prepare_saver(embedding = restore_embedding,
-            tree_lstm_cell = restore_tree_lstm_cell, sent_lstm = restore_sent_lstm,
-            output_layer = restore_output_layer)
-        restorer = tf.train.Saver(var_list = var_dict, max_to_keep = None)
+        var_dict, restorer = self.prepare_saver(embedding=restore_embedding,
+                                           tree_lstm_cell=restore_tree_lstm_cell,
+                                                sent_lstm=restore_sent_lstm,
+                                             output_layer=restore_output_layer,
+                                                optimizer=restore_optimizer)
         restorer.restore(self.sess, path_to_model)
 
+    def prepare_saver(self, embedding=True, tree_lstm_cell=True,
+                      sent_lstm=True, output_layer=True, optimizer=False):
+        tree_lstm_var_dict = self.tree_lstm.prepare_var_dict_for_saver(embedding=embedding,
+                                                                       tree_lstm_cell=tree_lstm_cell)
+        sent_lstm_var_dict = self.prepare_var_dict_for_saver(sent_lstm=sent_lstm,
+                                                             output_layer=output_layer)
+        var_dict = dict(tree_lstm_var_dict, **sent_lstm_var_dict)
+        if not optimizer:
+            var_dict = self.remove_opt_variables(var_dict)
+        saver = tf.train.Saver(var_list=var_dict, max_to_keep=None)
+        return var_dict, saver
 
-    def prepare_saver(self, embedding = True, tree_lstm_cell = True,
-                      sent_lstm = True, output_layer = True):
-        tree_lstm_var_dict = self.tree_lstm.prepare_var_dict_for_saver(embedding = embedding,
-                                                                       tree_lstm_cell = tree_lstm_cell)
-        sent_lstm_var_dict = self.prepare_var_dict_for_saver(sent_lstm = sent_lstm,
-                                                             output_layer = output_layer)
-        var_dict = dict(tree_lstm_var_dict).update(sent_lstm_var_dict)
-        saver = tf.train.Saver(var_list = var_dict, max_to_keep = None)
-        return saver
+    def remove_opt_variables(self, var_dict):
+        try:
+            opt_name = self.opt.get_name()
+        except AttributeError:
+            return var_dict
+        var_dict = {key:v for key,v in var_dict.items()
+                    if not key.rsplit('/',1)[1].startswith(opt_name)}
+        return var_dict
 
     def prepare_var_dict_for_saver(self, sent_lstm, output_layer):
         def save_name(name, def_pref):
-            return def_pref + '/' + name.split('/',1)[1] 
+            return def_pref + '/' + name.split('/', 1)[1]
         var_dict = dict()
         if sent_lstm:
             for var in self.sent_cell_variables:
-                var_dict[save_name(var.name,'sent_cell')] = var
+                var_dict[save_name(var.name, 'sent_cell')] = var
         if output_layer:
             for var in self.output_layer_variables:
-                var_dict[save_name(var.name,'output_layer')] = var
+                var_dict[save_name(var.name, 'output_layer')] = var
+        return var_dict
+
+    def init_model_variables(self):
+        self.sess.run(tf.variables_initializer(self.variables))
 
     @property
     def num_classes(self):
@@ -243,14 +258,16 @@ class HLSTMModel:
 
     @property
     def sent_lstm_num_units(self):
-        return self.sent_cell.state_size #????
+        return self.sent_cell.state_size  # ????
 
     @property
     def model_properties(self):
         property = {
             'NUM_CLASSES': self.num_classes,
             'SENT_LSTM_NUM_UNITS': self.sent_lstm_num_units,  # ??????
-        }.update(self.tree_lstm.properties)
+        }
+        property.update(self.tree_lstm.properties)
+        return property
 
     @property
     def train_properties(self):
@@ -292,10 +309,9 @@ class HLSTMModel:
     @property
     def variables(self):
         vars = []
-        for var in self.sess.graph.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
+        for var in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
             for name in self.variables_names:
                 name = name + '/'
                 if var.name.startswith(name):
                     vars.append(var)
         return vars + self.tree_lstm.variables
-

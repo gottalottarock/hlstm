@@ -19,7 +19,7 @@ class HLSTMInterface:
 
     def train(self, train_set, test_set=None, epochs=10, dev_batch_size=1,
               save=True, save_model_dir='', sess_name='', func_set_info_dict=None,
-              **property_dict):
+              quiet_saver = False, **property_dict):
         if not self.model.is_compiled:
             return -1
         if not func_set_info_dict:
@@ -31,7 +31,8 @@ class HLSTMInterface:
         train_epochs = self.model.train_epochs(train_set=train_set, dev_set=test_set,
                                                dev_batch_size=dev_batch_size,
                                                epochs=epochs, save=save,
-                                               save_dir=save_model_dir)
+                                               save_dir=save_model_dir,
+                                               quiet_saver = quiet_saver)
         for epoch_res, all_res in train_epochs:
             pass
         self.logger.record_train_logs(model_properies=self.model.model_properties,
