@@ -40,15 +40,15 @@ class HLSTMModel:
                                             where='file %s' % filename,
                                             msg='Try to initialize manually.')
         try:
-            sent_cell_weights_shape = var_shape['sent_cell/weights:0']
+            sent_cell_weights_shape = var_shape['sent_cell/weights']
         except KeyError:
-            raise VariableNotFoundException(variable='sent_cell/weights:0',
+            raise VariableNotFoundException(variable='sent_cell/weights',
                                             where='file %s' % filename,
                                             msg='Try to initialize manually.')
-        num_classes = output_layer_weights_shape[1]
-        sent_lstm_num_units = sent_cell_weights_shape[1]/4
+        num_classes = int(output_layer_weights_shape[1])
+        sent_lstm_num_units = int(sent_cell_weights_shape[1]/4)
         assert sent_lstm_num_units == output_layer_weights_shape[0]
-        if (sent_cell_weights_shape[0] ==
+        if  not (sent_cell_weights_shape[0] ==
             sent_lstm_num_units + tree_lstm.tree_lstm_num_units*2):
             raise RuntimeError('Saved model and tree lstm not compatible.')
         model = cls(sess, tree_lstm, sent_lstm_num_units, num_classes)
@@ -281,8 +281,12 @@ class HLSTMModel:
         return var_dict
 
     def prepare_var_dict_for_saver(self, sent_lstm, output_layer):
+        
         def save_name(name, def_pref):
-            return def_pref + '/' + name.split('/', 1)[1]
+            name = def_pref + '/' + name.split('/', 1)[1]
+            name = name.rsplit(':',1)[0]
+            return name
+
         var_dict = dict()
         if sent_lstm:
             for var in self.sent_cell_variables:
@@ -304,7 +308,7 @@ class HLSTMModel:
 
     @property
     def sent_lstm_num_units(self):
-        return self.sent_cell.state_size  # ????
+        return self.sent_cell.state_size[0]  # ????
 
     @property
     def model_properties(self):

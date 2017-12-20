@@ -32,7 +32,7 @@ class BinaryTreeLSTM:
                 BinaryTreeLSTMCell(tree_lstm_num_units,
                                    self.tree_lstm_keep_prob_ph),
                 self.tree_lstm_keep_prob_ph, self.tree_lstm_keep_prob_ph),
-            name_or_scope=self._tree_lstm_cell_default_scope_name)
+                name_or_scope=self._tree_lstm_cell_default_scope_name)
         self.word_embedding = td.Embedding(
             *weights.shape, initializer=weights, name=self._word_embedding_default_scope_name)
         self.embed_subtree = td.ForwardDeclaration(name='embed_subtree')
@@ -42,26 +42,27 @@ class BinaryTreeLSTM:
     def init_from_file(cls, filename, vocab):
         var_shape = dict(list_variables(filename))
         try:
-            embed_shape = var_shape['word_embedding/weights:0']
+            embed_shape = var_shape['word_embedding/weights']
         except KeyError:
-            raise VariableNotFoundException(variable='word_embedding/weights:0',
+            raise VariableNotFoundException(variable='word_embedding/weights',
                                             where='file %s' % filename,
                                             msg='Try to initialize manually.')
         vocab_len, embed_len = embed_shape
         vocab_len = vocab_len - 1
         try:
             tree_lstm_weights_shape = var_shape[
-                'tree_lstm_cell/fully_connected/weights:0']
+                'tree_lstm_cell/fully_connected/weights']
         except KeyError:
-            raise VariableNotFoundException(variable='tree_lstm_cell/fully_connected/weights:0',
+            raise VariableNotFoundException(variable='tree_lstm_cell/fully_connected/weights',
                                             where='file %s' % filename,
                                             msg='Try to initialize manually.')
-        tree_lstm_num_units = tree_lstm_weights_shape[1]/5
-        assert not tree_lstm_weights_shape[0] == embed_len + tree_lstm_num_units*2
+        tree_lstm_num_units = int(tree_lstm_weights_shape[1]/5)
+        assert tree_lstm_weights_shape[0] == embed_len + tree_lstm_num_units*2
         if not vocab_len == len(vocab):
             raise RuntimeError('Vocab used with saved model had a different size.\n \
-                                Try to initialize manually')
-        weights = np.zeros(embed_shape)
+                                Try to initialize manually\n \
+                                Used vocab len: %d'% vocab_len)
+        weights = np.zeros(embed_shape, dtype = np.float32)
         tree_lstm = cls(weights, vocab, tree_lstm_num_units)
         return tree_lstm
 
@@ -119,7 +120,9 @@ class BinaryTreeLSTM:
     def prepare_var_dict_for_saver(self, embedding,
                                    tree_lstm_cell):
         def save_name(name, def_pref):
-            return def_pref + '/' + name.split('/', 1)[1]
+            name = def_pref + '/' + name.split('/', 1)[1]
+            name = name.rsplit(':',1)[0]
+            return name
 
         var_dict = dict()
         if embedding:
@@ -154,7 +157,7 @@ class BinaryTreeLSTM:
 
     @property
     def tree_lstm_num_units(self):
-        return self.tree_lstm_cell.state_size
+        return self.tree_lstm_cell.state_size[0]
 
     @property
     def weights_shape(self):
