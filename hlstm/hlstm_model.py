@@ -30,7 +30,7 @@ class HLSTMModel:
         self.compile_model(num_classes, sent_lstm_num_units)
 
     @classmethod
-    def init_from_file(cls,filename,sess,tree_lstm):
+    def init_from_file(cls,filename,tree_lstm):
         var_shape = dict(list_variables(filename))
         try:
             output_layer_weights_shape = var_shape['output_layer/weights']
