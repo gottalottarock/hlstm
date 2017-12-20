@@ -24,14 +24,13 @@ class HLSTMModel:
                 l.append(value)
         return l
 
-    def __init__(self, sess, tree_lstm, sent_lstm_num_units, num_classes):
-        self.sess = sess
+    def __init__(self, tree_lstm, sent_lstm_num_units, num_classes):
         self.tree_lstm = tree_lstm
         self.save_dir = ''
         self.compile_model(num_classes, sent_lstm_num_units)
 
     @classmethod
-    def init_from_file(cls,filename,sess,tree_lstm):
+    def init_from_file(cls,filename,tree_lstm):
         var_shape = dict(list_variables(filename))
         try:
             output_layer_weights_shape = var_shape['output_layer/weights']
@@ -51,7 +50,7 @@ class HLSTMModel:
         if  not (sent_cell_weights_shape[0] ==
             sent_lstm_num_units + tree_lstm.tree_lstm_num_units*2):
             raise RuntimeError('Saved model and tree lstm not compatible.')
-        model = cls(sess, tree_lstm, sent_lstm_num_units, num_classes)
+        model = cls(tree_lstm, sent_lstm_num_units, num_classes)
         return model
 
 
@@ -103,7 +102,7 @@ class HLSTMModel:
         print('input type: %s' % self.model.input_type)
         print('output type: %s' % self.model.output_type)
 
-    def prepare_training(self,
+    def prepare_training(self, sess,
                          LEARNING_RATE=0.005,
                          KEEP_PROB=0.75,
                          EMBEDDING_LEARNING_RATE_FACTOR=0.1,
@@ -124,8 +123,8 @@ class HLSTMModel:
             self.opt = tf.train.AdamOptimizer(self.LEARNING_RATE)
             self.train = self.prepare_word_embedding_gradients()
         if init_model_variables:
-            self.init_model_variables()
-        self.init_optimizer()
+            self.init_model_variables(sess)
+        self.init_optimizer(sess)
 
     def prepare_word_embedding_gradients(self):
         grads_and_vars = self.opt.compute_gradients(self.loss)
@@ -138,28 +137,28 @@ class HLSTMModel:
         assert found == 1  # internal consistency check
         self.train_grad = self.opt.apply_gradients(grads_and_vars)
 
-    def train_step(self, batch):
+    def train_step(self,sess, batch):
         self.train_feed_dict[self.compiler.loom_input_tensor] = batch
-        _, batch_loss = self.sess.run(
+        _, batch_loss = sess.run(
             [self.train_grad, self.loss], self.train_feed_dict)
         return batch_loss
 
-    def train_epoch(self, train_input=None):
+    def train_epoch(self,sess, train_input=None):
         if not self.is_compiled:
             return 0, 0
         if not train_input:
             train_input = self.train_inputs
         t = time.time()
-        loss = sum(self.train_step(ba)
+        loss = sum(self.train_step(sess,ba)
                    for ba in td.group_by_batches(train_input, self.BATCH_SIZE))
         t = time.time() - t
         return loss, t
 
-    def eval_feed_dict(self):
+    def eval_feed_dict(self,sess):
         if not self.is_compiled:
             return list(), dict(), 0
         t = time.time()
-        output, metrics = self.sess.run(
+        output, metrics = sess.run(
             [self.compiler.output_tensors[0], self.metrics], self.dev_feed_dict)
         t = time.time() - t
         return output, metrics, t
@@ -173,7 +172,7 @@ class HLSTMModel:
             dev_set, batch_size=dev_batch_size)
         return dev_set
 
-    def train_epochs(self, train_set, dev_set=None, epochs=10,
+    def train_epochs(self,sess, train_set, dev_set=None, epochs=10,
                      dev_batch_size=1, save=True, save_dir='',
                      quiet_saver = True):
         self.init_train_set(train_set)
@@ -193,13 +192,13 @@ class HLSTMModel:
 
             if dev_set:
                 dev_output, epoch_res['DEV_METRICS'], epoch_res[
-                    'DEV_EVAL_TIME_S'] = self.eval_feed_dict()
+                    'DEV_EVAL_TIME_S'] = self.eval_feed_dict(sess)
                 print('Evaluation took %.2f s.' % epoch_res['DEV_EVAL_TIME_S'])
 
             dev_accuracy = ['%s: %.2f' % (k, v) for k, v in sorted(
                 epoch_res['DEV_METRICS'].items())]
             if save:
-                checkpoint_path = self.save_model(
+                checkpoint_path = self.save_model(sess,
                     save_dir=save_dir, global_step=epoch, quiet = quiet_saver)
                 epoch_res['SAVE'] = checkpoint_path
             else:
@@ -211,9 +210,9 @@ class HLSTMModel:
                 all_res[key].append(epoch_res[key])
             yield epoch_res, all_res
 
-    def eval(self, dev_set, dev_batch_size=1):
+    def eval(self,sess, dev_set, dev_batch_size=1):
         self.init_dev_set(dev_set, dev_batch_size=dev_batch_size)
-        return self.eval_feed_dict()
+        return self.eval_feed_dict(sess)
 
     @property
     def is_compiled(self):
@@ -226,7 +225,7 @@ class HLSTMModel:
             return False
         return True
 
-    def save_model(self, save_dir='', file_name='', global_step=1,
+    def save_model(self, sess, save_dir='', file_name='', global_step=1,
                    save_embedding=True, save_tree_lstm_cell=True,
                    save_sent_lstm=True, save_output_layer=True, quiet=False):
         var_dict, saver = self.prepare_saver(embedding=save_embedding,
@@ -240,19 +239,18 @@ class HLSTMModel:
         file_name += datetime.datetime.now().strftime('%m_%d_%H_%M')
         path = os.path.join(self.save_dir, file_name)
 
-        checkpoint_path = saver.save(
-            self.sess, path, global_step=global_step)
+        checkpoint_path = saver.save(sess, path, global_step=global_step)
         print('Model saved to %s' % checkpoint_path)
         if not quiet:
             print("Saved variables:")
             print('\n'.join(sorted(var_dict.keys())))
         return checkpoint_path
 
-    def restore(self, path_to_model, restore_sent_lstm=True,
+    def restore(self, sess, path_to_model, restore_sent_lstm=True,
                 restore_output_layer=True):
         var_dict, restorer = self.prepare_restorer(sent_lstm=restore_sent_lstm,
                                              output_layer=restore_output_layer)
-        restorer.restore(self.sess, path_to_model)
+        restorer.restore(sess, path_to_model)
 
 
     def prepare_restorer(self, sent_lstm=True, output_layer=True):
@@ -296,11 +294,11 @@ class HLSTMModel:
                 var_dict[save_name(var.name, self._output_layer_default_scope_name)] = var
         return var_dict
 
-    def init_model_variables(self):
-        self.sess.run(tf.variables_initializer(self.variables))
+    def init_model_variables(self, sess):
+        sess.run(tf.variables_initializer(self.variables))
 
-    def init_optimizer(self):
-        self.sess.run(tf.variables_initializer(self.optimizer_variables))
+    def init_optimizer(self, sess):
+        sess.run(tf.variables_initializer(self.optimizer_variables))
 
     @property
     def num_classes(self):
