@@ -9,9 +9,10 @@ from .tree_lstm import BinaryTreeLSTM
 
 class HLSTMInterface:
 
-    def __init__(self, model, logger=None):
+    def __init__(self,sess, model, logger=None):
         if not logger:
             logger = Logger()
+        self.sess = sess
         self.model = model
         self.logger = logger
 
@@ -19,11 +20,20 @@ class HLSTMInterface:
     #   train_set and test_set: [label, [tree, tree, tree, tree]]
 
     @classmethod
-    def cold_model_restore(cls,path_to_model,vocab, tree_cls=BinaryTreeLSTM,
-                           model_cls=HLSTMModel):
-        tree_lstm = tree_cls.init_from_file(path_to_model,vocab)
-        model = model_cls()
+    def init_from_file_and_restore(cls,sess, path_to_model, vocab, tree_cls=BinaryTreeLSTM,
+                           model_cls=HLSTMModel, logger = None):
+        interface = cls.init_from_file(sess, path_to_model, vocab, tree_cls,
+                                       model_cls, logger)
+        interface.restore_model(path_to_model)
+        return interface
 
+    @classmethod
+    def init_from_file(cls,sess, path_to_model,vocab,tree_cls = BinaryTreeLSTM,
+                      model_cls=HLSTMModel, logger = None):
+        tree_lstm = tree_cls.init_from_file(path_to_model,vocab)
+        model = model_cls.init_from_file(path_to_model,tree_lstm)
+        interface = cls(sess,model,logger)
+        return interface
 
 
     def train(self, train_set, test_set=None, epochs=10, dev_batch_size=1,
@@ -36,8 +46,8 @@ class HLSTMInterface:
         if not sess_name:
             sess_name = 'train_' + datetime.datetime.now().strftime('%m_%d_%H_%M')
         self.logger.start_session(sess_name)
-        self.model.prepare_training(**property_dict)
-        train_epochs = self.model.train_epochs(train_set=train_set, dev_set=test_set,
+        self.model.prepare_training(self.sess,**property_dict)
+        train_epochs = self.model.train_epochs(self.sess,train_set=train_set, dev_set=test_set,
                                                dev_batch_size=dev_batch_size,
                                                epochs=epochs, save=save,
                                                save_dir=save_model_dir,
@@ -53,7 +63,7 @@ class HLSTMInterface:
         self.logger.stop_session()
         logs_df = self.logger.get_all_logs_dataframe()
         return logs_df[logs_df['SESS_NAME'] == sess_name]
-    # def eval input:
+    # def eval input:self
     # dev_set = [tree, tree, tree]
     #
 
@@ -65,7 +75,7 @@ class HLSTMInterface:
     #test_set = [label,[tree,tree,tree]]
     #
     def test(self, test_set, dev_batch_size):
-        return self.model.eval(test_set, dev_batch_size)
+        return self.model.eval(self.sess, test_set, dev_batch_size)
 
     # def k-folds_CV input:
     # set: [label,[tree,tree,tree]]
@@ -114,13 +124,13 @@ class HLSTMInterface:
              'SET_LEN': len(set)}
         return d
 
-    def restore_model(self,sess, path_to_model, restore_embedding=True,
+    def restore_model(self, path_to_model, restore_embedding=True,
                                            restore_tree_lstm_cell=True,
                                            restore_sent_lstm=True,
                                            restore_output_layer=True):
-        self.model.tree_lstm.restore(sess, path_to_model,
+        self.model.tree_lstm.restore(self.sess, path_to_model,
             restore_embedding=restore_embedding,
             restore_tree_lstm_cell=restore_tree_lstm_cell)
-        self.model.restore(sess, path_to_model,
+        self.model.restore(self.sess, path_to_model,
             restore_sent_lstm=restore_sent_lstm,
             restore_output_layer=restore_output_layer)
