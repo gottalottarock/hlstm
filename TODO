@@ -12,10 +12,10 @@ Model:
     Save:
      ✔ save only model variables @done (17-12-13 21:16)
     Restore:
-     ☐ change restore logic
+     ✔ change restore logic @done (17-12-20 00:06)
      ☐ restore without hand-init(cold start restore)
-     ☐ get saved model properties
-     ☐ understand graphs
+     ✔ get saved model properties @done (17-12-20 00:06)
+     ✔ understand graphs @done (17-12-20 00:06)
      ✔ understand scopes and variable names ending @done (17-12-13 21:18)
     Evaluate:
      ☐ check evaluate

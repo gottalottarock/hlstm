@@ -4,7 +4,8 @@ import datetime
 import numpy as np
 from operator import itemgetter
 from .logger import Logger
-
+from .hlstm_model import HLSTMModel
+from .tree_lstm import BinaryTreeLSTM
 
 class HLSTMInterface:
 
@@ -16,6 +17,14 @@ class HLSTMInterface:
 
     # def train input:
     #   train_set and test_set: [label, [tree, tree, tree, tree]]
+
+    @classmethod
+    def cold_model_restore(cls,path_to_model,vocab, tree_cls=BinaryTreeLSTM,
+                           model_cls=HLSTMModel):
+        tree_lstm = tree_cls.init_from_file(path_to_model,vocab)
+        model = model_cls()
+
+
 
     def train(self, train_set, test_set=None, epochs=10, dev_batch_size=1,
               save=True, save_model_dir='', sess_name='', func_set_info_dict=None,
@@ -105,12 +114,13 @@ class HLSTMInterface:
              'SET_LEN': len(set)}
         return d
 
-    def restore_model(self,path, saved_model_properties = None):
-        # if model_properties:
-        #     compiled_model_properties = self.model.model_properties
-        #     sharedKeys = set(compiled_model_properties.keys()).intersection(
-        #                     saved_model_properties.keys())
-        #     for key in sharedKeys:
-        #         if compiled_model_properties[key] != saved_model_properties[key]:
-        #             print('Restored model')
-        self.model.restore_model(path)
+    def restore_model(self,sess, path_to_model, restore_embedding=True,
+                                           restore_tree_lstm_cell=True,
+                                           restore_sent_lstm=True,
+                                           restore_output_layer=True):
+        self.model.tree_lstm.restore(sess, path_to_model,
+            restore_embedding=restore_embedding,
+            restore_tree_lstm_cell=restore_tree_lstm_cell)
+        self.model.restore(sess, path_to_model,
+            restore_sent_lstm=restore_sent_lstm,
+            restore_output_layer=restore_output_layer)
