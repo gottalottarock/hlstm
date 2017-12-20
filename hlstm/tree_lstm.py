@@ -1,16 +1,30 @@
 import tensorflow as tf
 import tensorflow_fold as td
+import numpy as np
+from tensorflow.contrib.framework import list_variables
 from nltk.tokenize.sexpr import sexpr_tokenize
+
 from .tree_lstm_cell import BinaryTreeLSTMCell
 from .tree_binarizer import TreeBinarizer
+from .exceptions import VariableNotFoundException
 
 
 class BinaryTreeLSTM:
 
-    def __init__(self, sess, weights, vocab, tree_lstm_num_units, tree_binarizer=None):
+    _word_embedding_default_scope_name = 'word_embedding'
+    _tree_lstm_cell_default_scope_name = 'tree_lstm_cell'
+
+    @classmethod
+    def get_default_scope_names(cls):
+        l = []
+        for key, value in cls.__dict__.items():
+            if key.endswith('_default_scope_name') and isinstance(value, str):
+                l.append(value)
+        return l
+
+    def __init__(self, weights, vocab, tree_lstm_num_units, tree_binarizer=None):
         if not tree_binarizer:
             tree_binarizer = TreeBinarizer(vocab, dict())
-        self.sess = sess
         self.tree_binarizer = tree_binarizer
         self.tree_lstm_keep_prob_ph = tf.placeholder_with_default(1.0, [])
         self.tree_lstm_cell = td.ScopedLayer(
@@ -18,12 +32,38 @@ class BinaryTreeLSTM:
                 BinaryTreeLSTMCell(tree_lstm_num_units,
                                    self.tree_lstm_keep_prob_ph),
                 self.tree_lstm_keep_prob_ph, self.tree_lstm_keep_prob_ph),
-            name_or_scope='tree_lstm_cell')
+            name_or_scope=self._tree_lstm_cell_default_scope_name)
         self.word_embedding = td.Embedding(
-            *weights.shape, initializer=weights, name='word_embedding')
+            *weights.shape, initializer=weights, name=self._word_embedding_default_scope_name)
         self.embed_subtree = td.ForwardDeclaration(name='embed_subtree')
-        self.weights = weights
         self.vocab = vocab
+
+    @classmethod
+    def init_from_file(cls, filename, vocab):
+        var_shape = dict(list_variables(filename))
+        try:
+            embed_shape = var_shape['word_embedding/weights:0']
+        except KeyError:
+            raise VariableNotFoundException(variable='word_embedding/weights:0',
+                                            where='file %s' % filename,
+                                            msg='Try to initialize manually.')
+        vocab_len, embed_len = embed_shape
+        vocab_len = vocab_len - 1
+        try:
+            tree_lstm_weights_shape = var_shape[
+                'tree_lstm_cell/fully_connected/weights:0']
+        except KeyError:
+            raise VariableNotFoundException(variable='tree_lstm_cell/fully_connected/weights:0',
+                                            where='file %s' % filename,
+                                            msg='Try to initialize manually.')
+        tree_lstm_num_units = tree_lstm_weights_shape[1]/5
+        assert not tree_lstm_weights_shape[0] == embed_len + tree_lstm_num_units*2
+        if not vocab_len == len(vocab):
+            raise RuntimeError('Vocab used with saved model had a different size.\n \
+                                Try to initialize manually')
+        weights = np.zeros(embed_shape)
+        tree_lstm = cls(weights, vocab, tree_lstm_num_units)
+        return tree_lstm
 
     def logits_and_state(self):
         """Creates a block that goes from tokens to (logits, state) tuples."""
@@ -76,20 +116,34 @@ class BinaryTreeLSTM:
     def resolve_subtree(self):
         self.embed_subtree.resolve_to(self.embed_tree())
 
-    def prepare_var_dict_for_saver(self,embedding,
+    def prepare_var_dict_for_saver(self, embedding,
                                    tree_lstm_cell):
         def save_name(name, def_pref):
-            return def_pref + '/' + name.split('/',1)[1]
+            return def_pref + '/' + name.split('/', 1)[1]
 
         var_dict = dict()
         if embedding:
             for var in self.embedding_variables:
-                var_dict[save_name(var.name, 'word_embedding' )] = var
+                var_dict[
+                    save_name(var.name, self._word_embedding_default_scope_name)] = var
 
         if tree_lstm_cell:
             for var in self.tree_lstm_variables:
-                var_dict[save_name(var.name, 'tree_lstm_cell')] = var
+                var_dict[
+                    save_name(var.name, self._tree_lstm_cell_default_scope_name)] = var
         return var_dict
+
+    def prepare_restorer(self, embedding=True, tree_lstm_cell=True):
+        var_dict = self.prepare_var_dict_for_saver(embedding=embedding,
+                                                   tree_lstm_cell=tree_lstm_cell)
+        saver = tf.train.Saver(var_list=var_dict, max_to_keep=None)
+        return var_dict, saver
+
+    def restore(self, sess, path_to_model, restore_embedding=True,
+                restore_tree_lstm_cell=True):
+        var_dict, restorer = self.prepare_restorer(embedding=restore_embedding,
+                                                tree_lstm_cell=restore_tree_lstm_cell)
+        restorer.restore(sess, path_to_model)
 
     @property
     def properties(self):
@@ -97,7 +151,7 @@ class BinaryTreeLSTM:
                     'WEIGHTS_SHAPE': self.weights_shape,
                     'VOCABULARY_LEN': self.vocab_len}
         return property
-    
+
     @property
     def tree_lstm_num_units(self):
         return self.tree_lstm_cell.state_size
@@ -114,7 +168,6 @@ class BinaryTreeLSTM:
     def tree_lstm_name(self):
         return self.tree_lstm_cell.name
 
-
     @property
     def embedding_name(self):
         return self.word_embedding.name
@@ -127,7 +180,7 @@ class BinaryTreeLSTM:
     @property
     def tree_lstm_variables(self):
         return tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
-                                 scope= self.tree_lstm_name)
+                                 scope=self.tree_lstm_name)
 
     @property
     def embedding_variables(self):

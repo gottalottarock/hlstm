@@ -4,9 +4,25 @@ import time
 import tempfile
 import os
 import datetime
+from tensorflow.contrib.framework import list_variables
 
+from .exceptions import VariableNotFoundException
 
 class HLSTMModel:
+
+    _sent_lstm_default_scope_name = 'sent_cell'
+
+    _output_layer_default_scope_name = 'output_layer'
+
+    _optimizer_scope_name = 'optimizer'
+    
+    @classmethod
+    def get_default_scope_names(cls):
+        l = []
+        for key, value in cls.__dict__.items():
+            if key.endswith('_default_scope_name') and isinstance(value, str):
+                l.append(value)
+        return l
 
     def __init__(self, sess, tree_lstm, sent_lstm_num_units, num_classes):
         self.sess = sess
@@ -14,13 +30,39 @@ class HLSTMModel:
         self.save_dir = ''
         self.compile_model(num_classes, sent_lstm_num_units)
 
+    @classmethod
+    def init_from_file(cls,filename,sess,tree_lstm):
+        var_shape = dict(list_variables(filename))
+        try:
+            output_layer_weights_shape = var_shape['output_layer/weights']
+        except KeyError:
+            raise VariableNotFoundException(variable='output_layer/weights',
+                                            where='file %s' % filename,
+                                            msg='Try to initialize manually.')
+        try:
+            sent_cell_weights_shape = var_shape['sent_cell/weights:0']
+        except KeyError:
+            raise VariableNotFoundException(variable='sent_cell/weights:0',
+                                            where='file %s' % filename,
+                                            msg='Try to initialize manually.')
+        num_classes = output_layer_weights_shape[1]
+        sent_lstm_num_units = sent_cell_weights_shape[1]/4
+        assert sent_lstm_num_units == output_layer_weights_shape[0]
+        if (sent_cell_weights_shape[0] ==
+            sent_lstm_num_units + tree_lstm.tree_lstm_num_units*2):
+            raise RuntimeError('Saved model and tree lstm not compatible.')
+        model = cls(sess, tree_lstm, sent_lstm_num_units, num_classes)
+        return model
+
+
+
     def linearLSTM_over_TreeLstm(self, num_classes, sent_lstm_num_units):
         self.sent_cell = td.ScopedLayer(tf.contrib.rnn.BasicLSTMCell(
-            num_units=sent_lstm_num_units), 'sent_cell')
+            num_units=sent_lstm_num_units), name_or_scope = self._sent_lstm_default_scope_name)
         sent_lstm = (td.Map(self.tree_lstm.tree_lstm()
                             >> td.Concat()) >> td.RNN(self.sent_cell))
         self.output_layer = td.FC(
-            num_classes, activation=None, name='output_layer')
+            num_classes, activation=None, name=self._output_layer_default_scope_name)
         return (td.Scalar('int32'), sent_lstm >> td.GetItem(1)
                 >> td.GetItem(0) >> self.output_layer) \
             >> self.set_metrics()
@@ -66,7 +108,7 @@ class HLSTMModel:
                          KEEP_PROB=0.75,
                          EMBEDDING_LEARNING_RATE_FACTOR=0.1,
                          BATCH_SIZE=100,
-                         init=True,
+                         init_model_variables=True,
                          **extras):
         self.LEARNING_RATE = LEARNING_RATE
         self.KEEP_PROB = KEEP_PROB
@@ -78,10 +120,12 @@ class HLSTMModel:
             v) for k, v in self.compiler.metric_tensors.items()}
         self.loss = tf.reduce_sum(self.compiler.metric_tensors['root_loss'])
         # opt = tf.train.AdagradOptimizer(LEARNING_RATE)
-        self.opt = tf.train.AdamOptimizer(self.LEARNING_RATE)
-        self.train = self.prepare_word_embedding_gradients()
-        if init == True:
+        with tf.variable_scope(self._optimizer_scope_name):
+            self.opt = tf.train.AdamOptimizer(self.LEARNING_RATE)
+            self.train = self.prepare_word_embedding_gradients()
+        if init_model_variables:
             self.init_model_variables()
+        self.init_optimizer()
 
     def prepare_word_embedding_gradients(self):
         grads_and_vars = self.opt.compute_gradients(self.loss)
@@ -184,11 +228,11 @@ class HLSTMModel:
 
     def save_model(self, save_dir='', file_name='', global_step=1,
                    save_embedding=True, save_tree_lstm_cell=True,
-                   save_sent_lstm=True, save_output_layer=True,
-                   save_optimizer_weights=False, quiet=False):
+                   save_sent_lstm=True, save_output_layer=True, quiet=False):
         var_dict, saver = self.prepare_saver(embedding=save_embedding,
-                                             tree_lstm_cell=save_tree_lstm_cell, sent_lstm=save_sent_lstm,
-                                             output_layer=save_output_layer, optimizer=save_optimizer_weights)
+                                             tree_lstm_cell=save_tree_lstm_cell,
+                                             sent_lstm=save_sent_lstm,
+                                             output_layer=save_output_layer)
         if save_dir:
             self.save_dir = save_dir
         elif not self.save_dir:
@@ -204,27 +248,26 @@ class HLSTMModel:
             print('\n'.join(sorted(var_dict.keys())))
         return checkpoint_path
 
-    def restore_model(self, path_to_model, restore_embedding=True,
-                      restore_tree_lstm_cell=True, restore_sent_lstm=True,
-                      restore_output_layer=True, restore_optimizer = False):
-        if self.is_compiled:
-            pass
-        var_dict, restorer = self.prepare_saver(embedding=restore_embedding,
-                                           tree_lstm_cell=restore_tree_lstm_cell,
-                                                sent_lstm=restore_sent_lstm,
-                                             output_layer=restore_output_layer,
-                                                optimizer=restore_optimizer)
+    def restore(self, path_to_model, restore_sent_lstm=True,
+                restore_output_layer=True):
+        var_dict, restorer = self.prepare_restorer(sent_lstm=restore_sent_lstm,
+                                             output_layer=restore_output_layer)
         restorer.restore(self.sess, path_to_model)
 
+
+    def prepare_restorer(self, sent_lstm=True, output_layer=True):
+        var_dict = self.prepare_var_dict_for_saver(sent_lstm=sent_lstm,
+                                                   output_layer=output_layer)
+        restorer = tf.train.Saver(var_list=var_dict, max_to_keep=None)
+        return var_dict, restorer
+
     def prepare_saver(self, embedding=True, tree_lstm_cell=True,
-                      sent_lstm=True, output_layer=True, optimizer=False):
+                      sent_lstm=True, output_layer=True):
         tree_lstm_var_dict = self.tree_lstm.prepare_var_dict_for_saver(embedding=embedding,
                                                                        tree_lstm_cell=tree_lstm_cell)
         sent_lstm_var_dict = self.prepare_var_dict_for_saver(sent_lstm=sent_lstm,
                                                              output_layer=output_layer)
         var_dict = dict(tree_lstm_var_dict, **sent_lstm_var_dict)
-        if not optimizer:
-            var_dict = self.remove_opt_variables(var_dict)
         saver = tf.train.Saver(var_list=var_dict, max_to_keep=None)
         return var_dict, saver
 
@@ -243,14 +286,17 @@ class HLSTMModel:
         var_dict = dict()
         if sent_lstm:
             for var in self.sent_cell_variables:
-                var_dict[save_name(var.name, 'sent_cell')] = var
+                var_dict[save_name(var.name, self._sent_lstm_default_scope_name)] = var
         if output_layer:
             for var in self.output_layer_variables:
-                var_dict[save_name(var.name, 'output_layer')] = var
+                var_dict[save_name(var.name, self._output_layer_default_scope_name)] = var
         return var_dict
 
     def init_model_variables(self):
         self.sess.run(tf.variables_initializer(self.variables))
+
+    def init_optimizer(self):
+        self.sess.run(tf.variables_initializer(self.optimizer_variables))
 
     @property
     def num_classes(self):
@@ -282,6 +328,8 @@ class HLSTMModel:
         except AttributeError:
             print("Training properties not prepared, return empty dict")
         return property
+
+
 
     @property
     def sent_cell_name(self):
@@ -315,3 +363,11 @@ class HLSTMModel:
                 if var.name.startswith(name):
                     vars.append(var)
         return vars + self.tree_lstm.variables
+
+    @property
+    def optimizer_variables(self):
+        vars = []
+        for var in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
+            if var.name.startswith(self._optimizer_scope_name):
+                vars.append(var)
+        return vars
