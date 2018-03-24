@@ -1,4 +1,4 @@
-# from .interface import HLSTMInterface
+## from .interface import HLSTMInterface
 # from .logger import Logger
 # from .hlstm_model import HLSTMModel
 # from .tree_lstm import BinaryTreeLSTM
