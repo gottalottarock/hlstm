@@ -36,9 +36,9 @@ def prepare_embedding(googlew2vpath,limit=1000000, corpus_vocab_path=DATA_DIR+'/
 #   ]
 
 
-def prepare_labels(path_to_texts_df, labels_column='topics', trees_column='trees', trees_separator='||'):
-    df = pd.DataFrame.from_csv(path_to_texts_df)
-    labels = list(df['topics'].unique())
+def prepare_labels(path_to_texts_df, sep='\t', labels_column='topics', trees_column='trees', trees_separator='||'):
+    df = pd.DataFrame.from_csv(path_to_texts_df,sep=sep)
+    labels = list(df[labels_column].unique())
     train_texts = [[labels.index(row[labels_column]),
                     [tree.strip() for tree in row[trees_column].split(trees_separator)]]
                    for index, row in df.iterrows()]

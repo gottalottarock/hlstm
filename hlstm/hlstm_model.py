@@ -186,7 +186,7 @@ class HLSTMModel:
             epoch_res = {key: None for key in all_res.keys()}
             epoch_res['EPOCH'] = epoch
             epoch_res['TRAIN_LOSS'], epoch_res[
-                'TIME_TRAIN_EPOCH_S'] = self.train_epoch(shuffled)
+                'TIME_TRAIN_EPOCH_S'] = self.train_epoch(sess)
             print('Training took %.2f s.' % epoch_res['TIME_TRAIN_EPOCH_S'])
             checkpoint_path = None
 
