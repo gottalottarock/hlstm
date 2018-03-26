@@ -8,6 +8,9 @@ from tensorflow.contrib.framework import list_variables
 
 from .exceptions import VariableNotFoundException
 
+
+model_restore = False
+
 class HLSTMModel:
 
     _sent_lstm_default_scope_name = 'sent_cell'
@@ -139,18 +142,18 @@ class HLSTMModel:
 
     def train_step(self,sess, batch):
         self.train_feed_dict[self.compiler.loom_input_tensor] = batch
+        print("trainstep")
         _, batch_loss = sess.run(
             [self.train_grad, self.loss], self.train_feed_dict)
         return batch_loss
 
-    def train_epoch(self,sess, train_input=None):
+    def train_epoch(self,sess, train_set):
         if not self.is_compiled:
             return 0, 0
-        if not train_input:
-            train_input = self.train_inputs
         t = time.time()
+        print("starttrainepoch")
         loss = sum(self.train_step(sess,ba)
-                   for ba in td.group_by_batches(train_input, self.BATCH_SIZE))
+                   for ba in td.group_by_batches(train_set, self.BATCH_SIZE))
         t = time.time() - t
         return loss, t
 
@@ -186,7 +189,7 @@ class HLSTMModel:
             epoch_res = {key: None for key in all_res.keys()}
             epoch_res['EPOCH'] = epoch
             epoch_res['TRAIN_LOSS'], epoch_res[
-                'TIME_TRAIN_EPOCH_S'] = self.train_epoch(sess)
+                'TIME_TRAIN_EPOCH_S'] = self.train_epoch(sess,shuffled)
             print('Training took %.2f s.' % epoch_res['TIME_TRAIN_EPOCH_S'])
             checkpoint_path = None
 

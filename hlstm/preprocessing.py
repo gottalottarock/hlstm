@@ -6,6 +6,7 @@ from collections import Counter
 from gensim.models import KeyedVectors
 from .settings import DATA_DIR
 
+
 def load_keyed_vectors(path, limit):
     wv = KeyedVectors.load_word2vec_format(path, binary=True, limit=limit)
     wv.init_sims(replace=True)
